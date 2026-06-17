@@ -1,0 +1,15 @@
+services:
+  fastapi:
+    build: .
+    volumes:
+      - ./:/app
+    ports:
+      - 8000:8000
+
+    # environment:
+    #   - MONGODB_URL=${MONGODB_URL}
+    #   - MONGODB_PORT=${MONGODB_PORT}
+
+
+    # command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --access-log
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --access-log

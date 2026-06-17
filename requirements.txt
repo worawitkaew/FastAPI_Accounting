@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+
+# login part
+python-jose
+passlib
+python-multipart
+
+# pytest part
+pytest
+httpx

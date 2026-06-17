@@ -1,0 +1,31 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build-and-test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code (ดึงโค้ดจาก GitHub repository ลงมาใน workspace)
+      uses: actions/checkout@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Set up Docker Compose
+      run: |
+        sudo apt install docker-compose
+
+    - name: Build the Docker image
+      run: docker-compose build
+    - name: Run docker image
+      run: docker-compose up -d
+    - name: Test api
+      run: docker-compose run fastapi pytest .
