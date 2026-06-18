@@ -9,3 +9,5 @@ python-multipart
 # pytest part
 pytest
 httpx
+
+pysqlite3

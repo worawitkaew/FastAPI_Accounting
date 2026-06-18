@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import sqlite3
 
 app = FastAPI()
 
@@ -18,24 +19,27 @@ def root():
         "message": "ร้านดาวตก"
     }
 
-
 @app.get("/products")
 def get_products():
 
-    return [
-        {
-            "id": 1,
-            "name": "น้ำสปอนเซอร์",
-            "price": 15
-        },
-        {
-            "id": 2,
-            "name": "น้ำเปล่า",
-            "price": 10
-        },
-        {
-            "id": 3,
-            "name": "มด",
-            "price": 300
-        }
-    ]
+    conn = sqlite3.connect("shop.db")
+
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM products")
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    products = []
+
+    for row in rows:
+
+        products.append({
+            "id": row[0],
+            "name": row[1],
+            "price": row[2]
+        })
+
+    return products
