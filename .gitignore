@@ -1,5 +1,12 @@
 .vscode
 __pycache__
+*.pyc
 
 .env
 __init__.py
+
+# database
+shop.db
+
+# uploads
+uploads/
