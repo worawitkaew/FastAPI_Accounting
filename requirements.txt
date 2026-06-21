@@ -10,4 +10,6 @@ python-multipart
 pytest
 httpx
 
+# database
 pysqlite3
+pydantic
