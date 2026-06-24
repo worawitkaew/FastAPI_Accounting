@@ -9,9 +9,49 @@ from fastapi import File
 import shutil
 import os
 
+from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
+
+######## แก้ 304 #############
+from fastapi import Request
+
+@app.middleware("http")
+async def log_requests(
+    request: Request,
+    call_next
+):
+
+    response = await call_next(
+        request
+    )
+
+    if request.url.path.startswith(
+        "/uploads/"
+    ):
+        return response
+
+    now = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    if response.status_code != 304:
+        print(
+            f"[{now}] "
+            f"{request.method} "
+            f"{request.url.path} "
+            f"{response.status_code}"
+        )
+    if response.status_code >= 400:
+        print(
+            f"ERROR "
+            f"{request.method} "
+            f"{request.url.path} "
+            f"{response.status_code}"
+        )
+    return response
+######## แก้ 304 #############
 
 app.mount(
     "/uploads",
@@ -19,11 +59,24 @@ app.mount(
     name="uploads"
 )
 
+class DepositRequest(
+    BaseModel
+):
+
+    amount:int
+
+    slip_image:str
+
+    note:str=""
+
 class CartItem(BaseModel):
     product_id: int
     quantity: int
 class CheckoutRequest(BaseModel):
     items: list[CartItem]
+    payment_method:str
+    slip_image: str = ""
+
 class LoginData(BaseModel):
     username: str
     password: str
@@ -66,6 +119,7 @@ def upload_image(file: UploadFile = File(...)):
     return {
         "filename": file.filename
     }
+
 @app.get("/products")
 def get_products():
 
@@ -90,7 +144,12 @@ def get_products():
 
             "cost_price": row[3],
             "sell_price": row[4],
-            "stock": row[5]
+            "stock": row[5],
+            "owner": row[6],
+            "description": row[7],
+            "category": row[8],
+            "created_at": row[9],
+            "update_at": row[10]
         })
 
     return products
@@ -99,11 +158,16 @@ def get_products():
 
 class Product(BaseModel):
     name: str
-    image: str
+    image: str | None = None
 
     cost_price: float
     sell_price: float
     stock: int
+    owner: str
+    description: str
+    category: str
+    # created_at:str
+    # update_at:str
 
 class Expense(BaseModel):
     description: str
@@ -115,30 +179,41 @@ class Expense(BaseModel):
 def create_product(product: Product):
 
     conn = sqlite3.connect("shop.db")
-    print(product)
-    cursor = conn.cursor()
-
-    cursor.execute(
-    """
-    INSERT INTO products
-    (
-        name,
-        image,
-        cost_price,
-        sell_price,
-        stock
+    now = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
     )
-    VALUES (?, ?, ?, ?, ?)
-    """,
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO products
+        (
+            name,
+            image,
+            cost_price,
+            sell_price,
+            stock,
+            owner,
+            description,
+            category,
+            created_at,
+            update_at
+        )
+        VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         (
             product.name,
             product.image,
             product.cost_price,
             product.sell_price,
-            product.stock
+            product.stock,
+            product.owner,
+            product.description,
+            product.category,
+            now,
+            now
         )
     )
-
     conn.commit()
 
     conn.close()
@@ -192,44 +267,69 @@ def delete_product(product_id: int):
         "message": "ลบสินค้าสำเร็จ"
     }
 # 
-@app.put("/products/{product_id}")
+@app.put(
+    "/products/{product_id}"
+)
 def update_product(
     product_id: int,
     product: Product
 ):
 
-    conn = sqlite3.connect("shop.db")
+    try:
 
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        UPDATE products
-        SET
-            name = ?,
-            image = ?,
-            cost_price = ?,
-            sell_price = ?,
-            stock = ?
-        WHERE id = ?
-        """,
-        (
-            product.name,
-            product.image,
-            product.cost_price,
-            product.sell_price,
-            product.stock,
-            product_id
+        conn = sqlite3.connect(
+            "shop.db"
         )
-    )
 
-    conn.commit()
+        cursor = conn.cursor()
 
-    conn.close()
+        cursor.execute(
+            """
+            UPDATE products
+            SET
+              name=?,
+              image=?,
+              cost_price=?,
+              sell_price=?,
+              stock=?,
+              owner=?,
+              category=?,
+              description=?,
+              update_at=?
+            WHERE id=?
+            """,
+            (
+                product.name,
+                product.image,
+                product.cost_price,
+                product.sell_price,
+                product.stock,
+                product.owner,
+                product.category,
+                product.description,
+                datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                product_id
+            )
+        )
 
-    return {
-        "message": "แก้ไขสินค้าสำเร็จ"
-    }
+        conn.commit()
+
+        conn.close()
+
+        return {
+            "message":
+            "แก้ไขสำเร็จ"
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+    
 @app.post("/login")
 def login(data: LoginData):
 
@@ -463,15 +563,19 @@ def checkout(data: CheckoutRequest):
             created_at,
             total_cost,
             total_sell,
-            profit
+            profit,
+            payment_method,
+            slip_image
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ? ,? ,?)
         """,
         (
             created_at,
             total_cost,
             total_sell,
-            profit
+            profit,
+            data.payment_method,
+            data.slip_image
         )
     )
 
@@ -544,46 +648,99 @@ def checkout(data: CheckoutRequest):
 def dashboard():
 
     conn = sqlite3.connect("shop.db")
+    conn.row_factory = sqlite3.Row
 
     cursor = conn.cursor()
+
+    today = datetime.now().strftime(
+        "%Y-%m-%d"
+    )
 
     cursor.execute(
         """
         SELECT
-            COUNT(*),
-            COALESCE(SUM(total_sell), 0),
-            COALESCE(SUM(total_cost), 0),
-            COALESCE(SUM(profit), 0)
+            COUNT(*) as total_bill,
+            COALESCE(
+                SUM(total_sell),
+                0
+            ) as total_sell,
+            COALESCE(
+                SUM(profit),
+                0
+            ) as total_profit
         FROM transactions
-        """
+        WHERE DATE(created_at)=?
+        """,
+        (today,)
     )
 
-    row = cursor.fetchone()
+    summary = dict(
+        cursor.fetchone()
+    )
+
+    cursor.execute(
+        """
+        SELECT
+            COALESCE(
+                SUM(total_sell),
+                0
+            )
+        FROM transactions
+        WHERE payment_method='cash'
+        AND DATE(created_at)=?
+        """,
+        (today,)
+    )
+
+    cash_today = cursor.fetchone()[0]
+
+    cursor.execute(
+        """
+        SELECT
+            COALESCE(
+                SUM(total_sell),
+                0
+            )
+        FROM transactions
+        WHERE payment_method='transfer'
+        AND DATE(created_at)=?
+        """,
+        (today,)
+    )
+
+    transfer_today = cursor.fetchone()[0]
 
     conn.close()
 
     return {
-        "total_transactions": row[0],
-        "total_sell": row[1],
-        "total_cost": row[2],
-        "total_profit": row[3]
-    }
 
+        "total_bill":
+            summary["total_bill"],
+
+        "total_sell":
+            summary["total_sell"],
+
+        "total_profit":
+            summary["total_profit"],
+
+        "cash_today":
+            cash_today,
+
+        "transfer_today":
+            transfer_today
+
+    }
 @app.get("/transactions")
 def get_transactions():
 
     conn = sqlite3.connect("shop.db")
+    conn.row_factory = sqlite3.Row
 
     cursor = conn.cursor()
 
     cursor.execute(
         """
-        SELECT
-            id,
-            created_at,
-            total_cost,
-            total_sell,
-            profit
+        SELECT *
         FROM transactions
         ORDER BY id DESC
         """
@@ -593,40 +750,55 @@ def get_transactions():
 
     conn.close()
 
-    transactions = []
+    return [
+        dict(row)
+        for row in rows
+    ]
 
-    for row in rows:
+@app.get(
+    "/transactions/{transaction_id}"
+)
+def get_transaction_detail(
+    transaction_id: int
+):
 
-        transactions.append({
-            "id": row[0],
-            "created_at": row[1],
-            "total_cost": row[2],
-            "total_sell": row[3],
-            "profit": row[4]
-        })
+    conn = sqlite3.connect(
+        "shop.db"
+    )
 
-    return transactions
-
-@app.get("/transactions/{transaction_id}")
-def get_transaction_detail(transaction_id: int):
-
-    conn = sqlite3.connect("shop.db")
+    conn.row_factory = sqlite3.Row
 
     cursor = conn.cursor()
 
     cursor.execute(
         """
         SELECT
-            transaction_items.id,
-            transaction_items.product_id,
-            products.name,
-            transaction_items.quantity,
-            transaction_items.cost_price,
-            transaction_items.sell_price
-        FROM transaction_items
-        JOIN products
-            ON products.id = transaction_items.product_id
-        WHERE transaction_id = ?
+
+            p.name,
+
+            ti.quantity,
+
+            ti.sell_price,
+
+            (
+                ti.quantity *
+                ti.sell_price
+            ) as total
+
+        FROM
+            transaction_items ti
+
+        JOIN products p
+
+        ON
+
+            ti.product_id =
+            p.id
+
+        WHERE
+
+            ti.transaction_id = ?
+
         """,
         (transaction_id,)
     )
@@ -635,23 +807,13 @@ def get_transaction_detail(transaction_id: int):
 
     conn.close()
 
-    items = []
+    return [
 
-    for row in rows:
+        dict(row)
 
-        items.append({
-            "id": row[0],
-            "product_id": row[1],
-            "name": row[2],
-            "quantity": row[3],
-            "cost_price": row[4],
-            "sell_price": row[5]
-        })
+        for row in rows
 
-    return items
-
-import os
-
+    ]
 @app.put("/products/{product_id}/image")
 async def update_product_image(
     product_id: int,
@@ -715,3 +877,240 @@ async def update_product_image(
         "message": "เปลี่ยนรูปสำเร็จ",
         "filename": file.filename
     }
+@app.get("/owners")
+def get_owners():
+
+    conn = sqlite3.connect("shop.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM owners"
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "id": row[0],
+            "name": row[1]
+        }
+        for row in rows
+    ]
+@app.get("/categories")
+def get_categories():
+
+    conn = sqlite3.connect("shop.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM categories"
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "id": row[0],
+            "name": row[1]
+        }
+        for row in rows
+    ]
+@app.post("/upload-slip")
+def upload_slip(
+    file: UploadFile = File(...)
+):
+
+    os.makedirs(
+        "uploads/slips",
+        exist_ok=True
+    )
+
+    file_path = (
+        f"uploads/slips/"
+        f"{file.filename}"
+    )
+
+    with open(
+        file_path,
+        "wb"
+    ) as buffer:
+
+        shutil.copyfileobj(
+            file.file,
+            buffer
+        )
+
+    return {
+        "filename":
+        file.filename
+    }
+@app.get("/cash-pending")
+def cash_pending():
+
+    conn = sqlite3.connect(
+        "shop.db"
+    )
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+        COALESCE(
+            SUM(total_sell),
+            0
+        )
+        FROM transactions
+        WHERE payment_method='cash'
+        AND is_deposited=0
+        """
+    )
+
+    total = cursor.fetchone()[0]
+
+    conn.close()
+
+    return {
+        "pending_cash":
+        total
+    }
+
+@app.post("/cash-deposit")
+def cash_deposit(
+    data: DepositRequest
+):
+
+    conn = sqlite3.connect(
+        "shop.db"
+    )
+
+    cursor = conn.cursor()
+
+    created_at = (
+        datetime.now()
+        .strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO
+        cash_deposits
+        (
+            created_at,
+            amount,
+            slip_image,
+            note
+        )
+        VALUES
+        (?, ?, ?, ?)
+        """,
+        (
+            created_at,
+            data.amount,
+            data.slip_image,
+            data.note
+        )
+    )
+
+    cursor.execute(
+        """
+        UPDATE transactions
+        SET is_deposited=1
+        WHERE payment_method='cash'
+        AND is_deposited=0
+        """
+    )
+
+    conn.commit()
+
+    conn.close()
+
+    return {
+        "success":True
+    }
+@app.get("/cash-deposits")
+def get_cash_deposits():
+
+    conn = sqlite3.connect(
+        "shop.db"
+    )
+
+    conn.row_factory = sqlite3.Row
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM cash_deposits
+        ORDER BY id DESC
+        """
+    )
+
+    data = [
+
+        dict(row)
+
+        for row in
+
+        cursor.fetchall()
+
+    ]
+
+    conn.close()
+
+    return data
+
+@app.get("/sales-chart")
+def sales_chart():
+
+    conn = sqlite3.connect(
+        "shop.db"
+    )
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+
+        DATE(created_at),
+
+        SUM(total_sell)
+
+        FROM transactions
+
+        GROUP BY
+        DATE(created_at)
+
+        ORDER BY
+        DATE(created_at)
+
+        DESC
+
+        LIMIT 7
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    rows.reverse()
+
+    return [
+
+        {
+            "date": row[0],
+            "total": row[1]
+        }
+
+        for row in rows
+
+    ]

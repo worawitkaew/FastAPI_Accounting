@@ -9,9 +9,11 @@ CREATE TABLE products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     image TEXT,
-    cost_price INTEGER,
-    sell_price INTEGER,
-    stock INTEGER
+    cost_price REAL,
+    sell_price REAL,
+    stock INTEGER,
+    owner TEXT,
+    description TEXT
 )
 )
 """)

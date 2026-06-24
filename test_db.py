@@ -1,16 +1,16 @@
 import sqlite3
 
 conn = sqlite3.connect("shop.db")
-
 cursor = conn.cursor()
 
-cursor.execute(
-    "SELECT * FROM products"
-)
+# รันคำสั่ง SQL
+cursor.execute("PRAGMA table_info(transactions);")
 
-rows = cursor.fetchall()
+# ใช้ .fetchall() เพื่อดึงข้อมูลทั้งหมดออกมา
+data = cursor.fetchall()
 
-for row in rows:
-    print(row)
+# แสดงผลลัพธ์
+print(data)
 
+conn.commit()
 conn.close()
